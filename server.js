@@ -4,26 +4,45 @@ const http = require("http")
 const socketio=require('socket.io')
 const app = express();
 const server = http.createServer(app)
+const formatMessage = require('./utils/messages')
+const { userJoin, getCurrentUser, userLeave, getRoomUsers } = require('./utils/users')
+
+
 
 const io =socketio(server)
 const PORT = 3000;
+const botName = 'chat'
 //set static folder
 app.use(express.static(path.join(__dirname, 'public')))
 
-//run when client connects
+
 io.on("connection", socket => {
-    //console.log(socket);
-    socket.emit("message", "h from server")/////for the single client 
-    //broadcast when user connects
-    socket.broadcast.emit("message",'a user join '); ///for all the user except the the user who emitthe event
-///runs when client disconncets
-    socket.on('disconnect', () => {
-        io.emit('message', "a usr hes left")
+    socket.on('joinRoom', ({ username, room }) => {
+        const user = userJoin(socket.id, username, room);
+        socket.join(user.room)
+        socket.emit("message", formatMessage(user.username, "welcome"));
+        socket.broadcast.to(user.room).emit("message",
+            formatMessage(username, `${user.username} has joined the chat`));
+        io.to(user.room).emit('roomUsers', {
+            room: user.room,
+            users: getRoomUsers(user.room)
+        })
+
     })
-    ///
-    socket.on('chatMessage',(msg)=> {
-        console.log(msg);
-        io.emit('message',msg)
+    socket.on('chatMessage', (msg) => {
+        const user = getCurrentUser(socket.id);
+        io.to(user.room).emit('message', formatMessage(user.username, msg))
+    })
+    socket.on('disconnect', () => {
+        user = userLeave(socket.id);
+        if (user) {
+            io.to(user.room).emit('message', formatMessage(botName, ` ${user.username} leaved the chat`));
+            io.to(user.room).emit('roomUsers', {
+                room: user.room,
+                users: getRoomUsers(user.room)
+            })
+        };
+
     })
 })
 
